@@ -1,32 +1,15 @@
 library(avr)
 library(stringr)
 
-fullTransfers <- read.csv('transfers_rel_withlost.csv',header=TRUE,row.names=1,check.names=FALSE)
-#scale some transfer-to according to number of seats stood in 2016
-fullTransfers[,'People Before Profit Alliance'] <- (18/3)*fullTransfers[,'People Before Profit Alliance']
-fullTransfers[,'Workers Party'] <- (18/4)*fullTransfers[,'Workers Party']
-fullTransfers[,'Progressive Unionist Party'] <- (18/6)*fullTransfers[,'Progressive Unionist Party']
-fullTransfers[,'Traditional Unionist Voice'] <- (18/15)*fullTransfers[,'Traditional Unionist Voice']
-#also for WP 4, CISTA 4, NILRC 8, NIC 12, LA 2, CCLA 1, TUV 15, PUP 6
+#First try to reproduce all 2016 results, possibly also getting close to 
+#  count by count progress. For close ones such as South Antrim, may
+#  have to start running the full ~50k ballots, and possibly multiple runs.
+#TODO: add multicore option to speed up ballot generation
 
-#Hacky but increase Green, Alliance, TUV transfer-to, because they are not present for
-#  for as many transfers as big 4. Need this to get Bailey, Ford etc elected in 2016
-fullTransfers[,'Green Party'] <- 3*fullTransfers[,'Green Party']
-fullTransfers[,'Alliance Party'] <- 1.5*fullTransfers[,'Alliance Party']
-fullTransfers[,'Traditional Unionist Voice'] <- 2*fullTransfers[,'Traditional Unionist Voice']
-
-#Need to increase PBPA self transfer from 0 (for WB 2017), and TUV from 0.09.
-#  And in general ~0.7 seems a better self transfer prob. SDLP, All lower 
-#  by default because usually no self transfer option available. Exception is Independent.
-for (i in seq(1,21)) {
-  if (names(fullTransfers)[i] != 'Independent') {
-    currentSelfT <- fullTransfers[i,i]
-    fullTransfers[i,] <- fullTransfers[i,] * 0.25 / (sum(fullTransfers[i,])-currentSelfT) #rest of row adds to 0.25 now
-    fullTransfers[i,i] <- 0.7
-  } else {
-    fullTransfers[i,] <- fullTransfers[i,] / sum(fullTransfers[i,])
-  }
-}
+#Transfer matrix must take into account availability of each target at each
+#  elimination/election. Particularly with regard to self transfers.
+#  For now this matrix is a rough but usable one.
+fullTransfers <- read.csv('transferMatrix_rough.csv',header=TRUE,check.names=FALSE)
 
 partyMap <- vector('list')
 for (party in c('Sinn Fein','Democratic Unionist Party','Ulster Unionist Party',
@@ -40,9 +23,11 @@ for (party in c('Sinn Fein','Democratic Unionist Party','Ulster Unionist Party',
 for (party in c(names(fullTransfers),'votes_lost')) {
   partyMap[party] <- party
 }
+partyMap['Northern Ireland First'] <- 'Northern Ireland First'  #temporary
 
 replist <- function(arg, times) lapply(seq(times), function(i) arg)
 
+#TODO: add alternative getFirstPrefs to use electionsni.org files
 getFirstPrefs <- function(file) {
   nValid <- as.integer(read.csv(file,header=FALSE,nrows=1))
   firstPrefs <- read.csv(file,header=FALSE,skip=1)
@@ -61,12 +46,28 @@ buildList <- function(vote, candidates, transfers) {
 
     stillToUse <- setdiff(candidates,vote)
     if ('votes_lost' %in% names(transfers)) { stillToUse <- union(stillToUse,'votes_lost') } 
-    #print(partyMap[stillToUse[1]])
-    #print(partyMap[vote[length(vote)]])
-    probs <- sapply(stillToUse, function(p) { transfers[as.character(partyMap[vote[length(vote)]]),
-                                                        as.character(partyMap[p])]})
+    
+    #temporary**
+    stillToUse <- setdiff(stillToUse,c('Northern Ireland First'))
+    probs <- unlist(sapply(stillToUse, function(p) { transfers[as.character(partyMap[vote[length(vote)]]),
+                                                        as.character(partyMap[p])]}))
     #probs <- sapply(stillToUse, function(p) { transfers[as.character(partyMap[vote[1]]),
     #                                                    as.character(partyMap[p])]})
+    #Not sure which one of the above is better
+    
+    #If same party present more than once, prob is divided equally
+    partiesOnly <- as.character(sapply(stillToUse, function(p) partyMap[p]))
+    partyCounts <- table(partiesOnly)
+    for (m in 1:5) {
+        multiples <- names(partyCounts)[partyCounts==m]
+        for (p in multiples) {
+            probs[grepl(p,stillToUse)] <- probs[grepl(p,stillToUse)] / m
+        }    
+    }
+    
+    #for now use a low-ish default
+    probs[is.na(probs)] <- 0.05
+    probs[is.null(probs)] <- 0.05  #temporarily missing NI First
     
     #print(stillToUse)
     #print(probs)
@@ -92,30 +93,30 @@ runConstit <- function(constitName, resultsFile, nSeats, fullTransfers) {
   if ( sum(firstPrefs$percent) < 98 ) { print('Below 100%!!!')}
   if ( sum(firstPrefs$percent) > 102 ) { print('Over 100%!!!')}
   
-  partiesOnly <- unique(as.character(sapply(firstPrefs$cand, function(p) { str_trim(gsub('[12345]','',p))})))
-  transfers <- fullTransfers[, names(fullTransfers) %in% partiesOnly]
+  partiesOnly <- unique(as.character(sapply(firstPrefs$cand, function(p) partyMap[p])))
+  #transfers <- fullTransfers[, names(fullTransfers) %in% c(partiesOnly,'votes_lost')]
+  transfers <- fullTransfers
   
   votes <- c()
   for (i in seq(1,nrow(firstPrefs))) {
     votes <- c(votes, replist(as.character(firstPrefs$cand[i]), firstPrefs$number[i]))
   }
-  print("Elected using first preference order:")
-  #elected1 <- stv(votes, nSeats)$winners[1:6]  #Doesn't always return top 6 first prefs!
-  #elected1 <- sapply(elected1, function(p) { str_trim(gsub('[12345]','',p))})
-  #print(table(elected1))
-  print(sort(table(unlist(votes)),decreasing=TRUE)[1:nSeats])
+  #print("Elected using first preference order:")
+  #print(sort(table(unlist(votes)),decreasing=TRUE)[1:nSeats])
   
   fullvotes <- c()
   #slow to run, so sampling the total ~40k at the moment
-  for (vote in sample(votes,10000,replace=FALSE)) {
+  for (vote in sample(votes,500,replace=FALSE)) {
   #for (vote in votes) {
     fullvotes <- c(fullvotes, buildList(vote, firstPrefs$cand, transfers))
   }
+  print("Ballot length summary:")
+  print(summary(sapply(fullvotes,length)))
   print("Elected using STV:")
   elected2 <- stv(fullvotes, nSeats)$winners[1:(nSeats+1)]
-  #elected2 <- sapply(elected2, function(p) { str_trim(gsub('[12345]','',p))})
   elected2 <- sapply(elected2, function(p) { as.character(partyMap[p]) })
   print(table(elected2[1:nSeats]))
+  
   res2 <- data.frame()
   count <- 1
   for (el in elected2) { 
@@ -125,17 +126,7 @@ runConstit <- function(constitName, resultsFile, nSeats, fullTransfers) {
   res2
 }
 
-#firstPrefs <- getFirstPrefs(36723, 'fp2016/southB2016.csv')
-#partiesOnly <- unique(as.character(sapply(firstPrefs$cand, function(p) { str_trim(gsub('[12345]','',p))})))
-
-#transfers <- fullTransfers[, names(fullTransfers) %in% partiesOnly]
-
-#buildList(c('Ulster Unionist Party 1'),firstPrefs$cand,fullTransfers)
-
-##runConstit('eastAntrim2016.csv', 6, fullTransfers)
-#runConstit('southB2016.csv', 6, fullTransfers)
-#runConstit('upperbann2016.csv', 6, fullTransfers)
-runConstit('South Antrim','fp2016/southAntrim2016.csv', 6, fullTransfers)
+#runConstit('South Antrim','fp2016/southAntrim2016.csv', 6, fullTransfers)
 
 runAllConstits <- function(nSeats, fullTransfers) {
   assembly <- data.frame()
@@ -168,11 +159,6 @@ runAllConstits <- function(nSeats, fullTransfers) {
 assembly <- runAllConstits(6,fullTransfers)
 print(table(subset(assembly,round<=6)$party))
 
-#Strangford variable, need to run longer
-#South Down SDLP rt UUP  NOW usually OK
-#Upper Bann SDLP rt SF (tight)
-#South Antrim UUP rt All NOW sometimes OK
-#BW sometimes DUP/SF rt SDLP (tight)
 #Switches in 2016: UB, SA, SD, FST, WT, Foyle, ELD, LV, BW
 
 #Now DUP +1, SF -1, SDLP -1, UUP +2 (maybe lucky on All SA)
