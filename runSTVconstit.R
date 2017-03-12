@@ -1,15 +1,20 @@
 library(avr)
 library(stringr)
+library(doMC)
+registerDoMC(cores=2)
 
 #First try to reproduce all 2016 results, possibly also getting close to 
-#  count by count progress. For close ones such as South Antrim, may
-#  have to start running the full ~50k ballots, and possibly multiple runs.
-#TODO: add multicore option to speed up ballot generation
+#  count by count progress. ~10k ballots is usually robust, but may prefer 
+#  an ensemble of ~1-3k samples to capture uncertainty in transfer probs.
+
+#Looks like D Kelly got about twice as many transfers from Alliance in 2017 as 2016
+#TODO: some candidates go down in votes in STV, seems because empty votes need to also be dropped from weights
 
 #Transfer matrix must take into account availability of each target at each
 #  elimination/election. Particularly with regard to self transfers.
 #  For now this matrix is a rough but usable one.
-fullTransfers <- read.csv('transferMatrix_rough.csv',header=TRUE,check.names=FALSE)
+fullTransfers <- read.csv('transferMatrix_rough_nationwide.csv',header=TRUE,check.names=FALSE)
+UBTransfers <- read.csv('transferMatrix_rough_upper-bann.csv',header=TRUE,check.names=FALSE)
 
 partyMap <- vector('list')
 for (party in c('Sinn Fein','Democratic Unionist Party','Ulster Unionist Party',
@@ -71,7 +76,7 @@ buildList <- function(vote, candidates, transfers) {
     
     #print(stillToUse)
     #print(probs)
-    if (sum(probs) == 0) { probs <- probs + 0.01}
+    #if (sum(probs) == 0) { probs <- probs + 0.01}
     probs <- probs*1/sum(probs)
     #print(probs)
     
@@ -106,14 +111,20 @@ runConstit <- function(constitName, resultsFile, nSeats, fullTransfers) {
   
   fullvotes <- c()
   #slow to run, so sampling the total ~40k at the moment
-  for (vote in sample(votes,500,replace=FALSE)) {
+  #for (vote in sample(votes,500,replace=FALSE)) {
   #for (vote in votes) {
-    fullvotes <- c(fullvotes, buildList(vote, firstPrefs$cand, transfers))
-  }
+  #  fullvotes <- c(fullvotes, buildList(vote, firstPrefs$cand, transfers))
+  #}
+  fullvotes <- foreach (vote = sample(votes,10000,replace=FALSE), .combine=c) %dopar% 
+      buildList(vote, firstPrefs$cand, transfers) 
+  #fullvotes <- foreach (vote = votes, .combine=c) %dopar% 
+  #    buildList(vote, firstPrefs$cand, transfers) 
+  
   print("Ballot length summary:")
   print(summary(sapply(fullvotes,length)))
   print("Elected using STV:")
-  elected2 <- stv(fullvotes, nSeats)$winners[1:(nSeats+1)]
+  #elected2 <- stv(fullvotes, nSeats)$winners[1:(nSeats+1)]
+  elected2 <- my_stv(fullvotes, nSeats)$winners[1:(nSeats+1)]  #testing
   elected2 <- sapply(elected2, function(p) { as.character(partyMap[p]) })
   print(table(elected2[1:nSeats]))
   
@@ -169,6 +180,10 @@ print(table(subset(assembly,round<=6)$party))
 # 102/108: BS SDLP/Gr, EA All/SF, SA SDLP/All, UB SDLP/SF, FST SF/SDLP, NA SDLP/SF
 #Incl votes_lost, ballot gen previous, self-t 0.7, 10k run: SDLP, UUP +2, All -1, PBP -1
 # 103/108: EA UUP/SF, SA UUP/All, UB SDLP/SF, FST SF/SDLP, Foyle SDLP/PBP
+
+#With transferMatrix_rough, these seem correct: BN, BE, NoA, EA, SA, LV, ND, SD, 
+#  ELD, FST, F, WT, MU, NwA
+#Harder: BW (DUP vs SF4), Strangford (SDLP vs UUP2, Ind involved), UB (SDLP vs UUP2),
 
 #---- 2017
 runAllConstits2017 <- function(fullTransfers) {
