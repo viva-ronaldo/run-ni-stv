@@ -1,11 +1,11 @@
 Alliance Party,Animal Welfare Party,Cannabis Is Safer Than Alcohol,Cross-Community Labour Alternative,Democracy First,Democratic Unionist Party,Green Party,Independent,Labour Alternative,NI Conservatives,NI Labour Representation Committee,Northern Ireland First,People Before Profit Alliance,Progressive Unionist Party,Sinn Fein,Social Democratic and Labour Party,South Belfast Unionists,Traditional Unionist Voice,UK Independence Party,Ulster Unionist Party,Workers Party,votes_lost
-Alliance Party,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,0.12583,0.53503,NaN,NaN,NaN,0.13907,NaN,0.20007
+Alliance Party,NaN,NaN,NaN,NaN,NaN,0.11641,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,0.04948,0.33469,NaN,0.04191,NaN,0.20547,NaN,0.25204
 Animal Welfare Party,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN
 Cannabis Is Safer Than Alcohol,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN
 Cross-Community Labour Alternative,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN
 Democracy First,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN
-Democratic Unionist Party,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN
-Green Party,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN
+Democratic Unionist Party,NaN,NaN,NaN,NaN,NaN,0.92370,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,0.00194,0.00416,NaN,NaN,NaN,0.04079,NaN,0.02941
+Green Party,0.44013,NaN,NaN,NaN,NaN,0.05396,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,0.08094,0.16695,NaN,0.03879,0.03710,0.05059,NaN,0.13153
 Independent,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN
 Labour Alternative,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN
 NI Conservatives,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN
@@ -13,11 +13,11 @@ NI Labour Representation Committee,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,N
 Northern Ireland First,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN
 People Before Profit Alliance,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN
 Progressive Unionist Party,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN
-Sinn Fein,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,0.88648,0.10695,NaN,NaN,NaN,NaN,NaN,0.00656
+Sinn Fein,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN
 Social Democratic and Labour Party,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN
 South Belfast Unionists,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN
-Traditional Unionist Voice,0.01000,NaN,NaN,NaN,NaN,0.45964,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,0.00250,0.01536,NaN,NaN,NaN,0.48429,NaN,0.02821
-UK Independence Party,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN
-Ulster Unionist Party,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN
+Traditional Unionist Voice,NaN,NaN,NaN,NaN,NaN,0.12011,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,0.00141,0.00283,NaN,0.82854,NaN,0.03062,NaN,0.01649
+UK Independence Party,0.04393,NaN,NaN,NaN,NaN,0.30093,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,0.01963,0.02710,NaN,0.41402,NaN,0.10935,NaN,0.08505
+Ulster Unionist Party,0.01564,NaN,NaN,NaN,NaN,0.09266,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,0.00361,0.00241,NaN,0.06859,0.00722,0.79663,NaN,0.01324
 Workers Party,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN
 votes_lost,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN,NaN
