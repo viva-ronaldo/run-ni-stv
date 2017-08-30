@@ -1,5 +1,9 @@
 data/
 fp2016/
+fp2017/
 transferProbs2011/
 transferProbs2016/
 transferProbs2017/
+.ipynb_checkpoints/
+.RData
+.Rhistory
