@@ -1,0 +1,235 @@
+---
+title: "NI Assembly vote transfers"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape2)
+library(dplyr)
+library(ggplot2)
+plot_transfer_grid_ordered <- function(grid,title,subtitle,party_order=NULL) {
+  if (!is.null(party_order)) {
+    grid_ordered <- grid
+    grid_ordered$transferFrom <- factor(grid_ordered$transferFrom,levels=party_order)
+    grid_ordered$transferTo <- factor(grid_ordered$transferTo,levels=c(party_order,'votes_lost'))  
+  } else { grid_ordered <- grid}
+  ggplot(grid_ordered,aes(transferTo,transferFrom)) + 
+    geom_tile(aes(fill=fraction)) + theme(axis.text.x=element_text(angle=45,hjust=1)) +
+    scale_fill_distiller(palette='Spectral',direction=-1,limits=c(0,0.6)) +
+    labs(title=title,subtitle=subtitle,y='Transferring party',x='Transfer destination',fill='Fraction')
+}
+
+plot_differences_grid <- function(grid,title,subtitle) {
+  ggplot(grid,aes(transferTo,transferFrom)) + 
+    geom_tile(aes(fill=fraction_change)) + theme(axis.text.x=element_text(angle=45,hjust=1)) +
+    scale_fill_distiller(palette='RdBu',direction=-1,
+                         limits=c(-max(abs(grid$fraction_change),na.rm=T),
+                                  max(abs(grid$fraction_change),na.rm=T))) + 
+    labs(title=title,subtitle=subtitle,
+         y='Transferring party',x='Transfer destination',fill='Fraction change')
+}
+
+read_and_melt_grid <- function(filename) {
+  grid <- read.csv(filename,header=TRUE,check.names=FALSE)
+  grid$transferFrom <- as.character(party_short_names[row.names(grid)])
+  grid <- melt(grid,id.vars='transferFrom',variable.name='transferTo',value.name='fraction')
+  grid$transferTo <- as.character(party_short_names[as.character(grid$transferTo)])
+  grid
+}
+
+get_party_short_names <- function() {
+  list('Democratic Unionist Party'='DUP',
+                          'Ulster Unionist Party'='UUP',
+                          'Sinn Fein'='SF',
+                          'Social Democratic and Labour Party'='SDLP',
+                          'Alliance Party'='Alliance',
+                          'Traditional Unionist Voice'='TUV',
+                          'Green Party'='Green',
+                          'People Before Profit Alliance'='PBP',
+                          'Independent'='Ind',
+                          'Workers Party'='Workers',
+                          'Labour Alternative'='Labour',
+                          'Cross-Community Labour Alternative'='CCLA',
+                          'South Belfast Unionists'='SBU',
+                          'Cannabis Is Safer Than Alcohol'='CISTA',
+                          'NI Labour Representation Committee'='NILRC',
+                          'NI Conservatives'='NI Cons',
+                          'Progressive Unionist Party'='PUP',
+                          'Animal Welfare Party'='AWP',
+                          'Democracy First'='DF',
+                          'Northern Ireland First'='NIF',
+                          'UK Independence Party'='UKIP',
+                          'Socialist Party'='Soc',
+                          'British Nationalist Party'='BNP',
+                          'Procapitalism'='Cap',
+                          'UK Unionist Party'='UKUP',
+                          'Socialist Environmental Alliance'='SEA',
+                          'Republican Sinn Fein'='RSF',
+                          'Labour Party'='Lab',
+                          'votes_lost'='votes_lost')
+}
+party_short_names <- get_party_short_names()
+```
+
+## The problem
+
+The Single Transferable Vote (STV) electoral method, in which voters rank as many candidates as they like in order of preference, is a great system and one that provides a lot of interesting voter data from the raw count results. The counts from the Northern Ireland Assembly elections of 2007, 2011, 2016, and 2017 were collected from [Elections NI](http://electionsni.org.s3-website-eu-west-1.amazonaws.com/index.html) (2011-2017) and [eoni.org.uk](http://www.eoni.org.uk/Elections/Election-results-and-statistics/Election-results-and-statistics-2003-onwards) (2007), and processed using code available [here](https://github.com/viva-ronaldo/run-ni-stv/blob/master/parse_elections_available.ipynb), in order to track the transferring of votes from one party to another.
+
+Votes are transferred both when a candidate is eliminated from the bottom of a constituency ranking, and when a candidate at the top of the ranking is elected. Each constituency election therefore contains multiple transfer opportunities (typically 8--10), from which information about the ordering of parties on voters' ballots can be extracted. After some of the counts, multiple candidates are removed simultaneously; this makes it impossible to cleanly attribute transferred votes to one party, so these cases were removed from the analysis. Using all cases of transfers from a single party, it is possible to determine the fraction of votes that, on average, are transferred from Party **A** to Party **B**, *when Party __B__ is available to receive the transfers*. Of course, some transferrer-transferee combinations never occur in a given year; estimating what these fractions might have been if the situation had arose is a more interesting challenge, but is not considered here.
+
+## Transfer fractions when no same-party option available
+
+By far the most popular transfer is from a candidate from one party to another candidate from the same party. Since this skews transfer fractions to all other parties downwards, here grids are shown considering only counts in which there was no such self-transfer option available. Transfer fractions from **A** to **B** are then computed in cases when **B** was an available option, and fractions are normalised to provide the probability of a vote from **A** being transferred to each other party, if all parties were available to receive the transfers. Repeating for all parties results in a grid of probabilities, where rows sum to 1.
+
+```{r echo=FALSE}
+fullTra2007Rest <- read_and_melt_grid('transferProbs2007/transferMatrix_whenSelfNotAvailable_nationwide.csv')
+
+main_targets <- c('DUP','SF','UUP','SDLP','Alliance','Green','UKIP','Ind','UKUP','votes_lost')
+fullTra2007RestMain <- subset(fullTra2007Rest,transferTo %in% main_targets & transferFrom %in% main_targets)
+
+plot_transfer_grid_ordered(fullTra2007RestMain,
+                           'Transfer fractions when no self-transfer available',
+                           '2007 nationwide',
+                           c('DUP','UUP','UKUP','UKIP','Ind','Alliance','SDLP','Green','SF'))
+
+```
+
+In general, when other members of the same party are not available, unionist candidates transfer to other unionists (lower left in the 2007 plot, above) and nationalists transfer to other nationalists (upper right, above). The roughly symmetrical nature of the 2007 reflects the reciprocal nature of transfers. Parties receiving more first preference votes do, however, tend to attract more transfers too; for example, compare the values in the UUP and UKUP columns (unlike rows, columns do not sum to 1). This is not always the case though: DUP and SF receive noticeably fewer transfers than UUP and SDLP, respectively, despite the former two receiving more first preference votes. 
+
+```{r echo=FALSE}
+fullTra2011Rest <- read_and_melt_grid('transferProbs2011/transferMatrix_whenSelfNotAvailable_nationwide.csv')
+
+main_targets <- c('DUP','SF','UUP','SDLP','Alliance','Green','UKIP','Ind','TUV','PBP','votes_lost')
+fullTra2011RestMain <- subset(fullTra2011Rest,transferTo %in% main_targets & transferFrom %in% main_targets)
+
+plot_transfer_grid_ordered(fullTra2011RestMain,
+                           'Transfer fractions when no self-transfer available',
+                           '2011 nationwide',
+                           c('DUP','UUP','TUV','UKIP','Ind','Alliance','SDLP','Green','PBP','SF'))
+
+```
+In 2011, there is sufficient data to include TUV, who, as expected, are firmly part of the unionist bloc, and PBP, who seem to fit more into the nationalist group. DUP and UUP voters wasted considerably fewer of their votes (votes_lost) this time than in 2007, but a substantial fraction of votes for all parties were not transferred to anyone (see below).
+
+```{r echo=FALSE}
+fullTra2016Rest <- read_and_melt_grid('transferProbs2016/transferMatrix_whenSelfNotAvailable_nationwide.csv')
+
+main_targets <- c('DUP','SF','UUP','SDLP','Alliance','Green','UKIP','Ind','TUV','PBP','votes_lost')
+fullTra2016RestMain <- subset(fullTra2016Rest,transferTo %in% main_targets & transferFrom %in% main_targets)
+
+plot_transfer_grid_ordered(fullTra2016RestMain,
+                           'Transfer fractions when no self-transfer available',
+                           '2016 nationwide',
+                           c('DUP','UUP','TUV','UKIP','Ind','Alliance','SDLP','Green','PBP','SF'))
+
+```
+In 2016, the two blocs appear to have solidified, and votes are spread relatively evenly among the two groups.
+
+and 2017
+```{r echo=FALSE}
+fullTra2017Rest <- read_and_melt_grid('transferProbs2017/transferMatrix_whenSelfNotAvailable_nationwide.csv')
+
+main_targets <- c('DUP','SF','UUP','SDLP','Alliance','Green','UKIP','Ind','TUV','PBP','votes_lost')
+fullTra2017RestMain <- subset(fullTra2017Rest,transferTo %in% main_targets & transferFrom %in% main_targets)
+
+plot_transfer_grid_ordered(fullTra2017RestMain,
+                           'Transfer fractions when no self-transfer available',
+                           '2017 nationwide',
+                           c('DUP','UUP','TUV','UKIP','Ind','Alliance','SDLP','Green','PBP','SF'))
+
+```
+
+show diffs instead?
+
+## TODO check 2007 lost
+
+```{r echo=FALSE}
+collected_votes_lost <- subset(read_and_melt_4_grids('matrix','all'),
+                               transferTo=='votes_lost')
+
+collected_votes_lost <- subset(collected_votes_lost, !is.na(fraction))
+keep_parties <- collected_votes_lost %>% group_by(transferFrom) %>% 
+  summarise(n=n()) %>% filter(n>=3) %>% select(transferFrom) %>% unlist() %>% as.character()
+collected_votes_lost <- subset(collected_votes_lost, transferFrom %in% keep_parties)
+
+year_av_lost <- collected_votes_lost %>% group_by(year) %>% summarise(average=mean(fraction))
+collected_votes_lost <- merge(collected_votes_lost,year_av_lost,by='year')
+
+ggplot(collected_votes_lost) + geom_point(aes(year,fraction,colour=transferFrom)) +
+  geom_line(aes(year,fraction,colour=transferFrom,group=transferFrom)) +
+  geom_point(aes(year,average),colour='black',size=2.2) + 
+  geom_line(aes(year,average,group=1),colour='black',size=1) +
+  ylim(0,0.42) + labs(y='Fraction lost',x='Year',colour='',
+                      title='Fraction of votes not transferred by party')
+
+#From 2007 to 2016, the fraction of ballots that were exhausted before the end of the process fell by almost half, to around 0.10 (SHOULD BE WEIGHTED AVG?). (Note that this is not quite the fraction of votes that were wasted, as many of the votes failing to transfer will have been downweighted after being passed as part of the surplus of an elected candidate.) In 2017 the fraction of votes not transferred increased slightly, halting this downward trend.  
+
+#Unless a voter truly has no preference between several candidates, there is usually no reason not to fully complete the ballot sheet, so the decrease in votes lost in 2016 and 2017 is encouraging to see.
+
+```
+The worst offenders for lost votes --- possibly suggesting a more unique appeal to voters than other parties, along with a lack of self-transfer options --- were PBP, while the most consistent transferrers were TUV and NI Cons. Note that not all of these votes are lost at their full value, as many will be transferred from elected candidates and therefore reduced in weight. Summing constituency votes by count shows that an average of 5% of weighted votes are lost in the course of a count.
+
+## Voters becoming more or less partisan?
+
+More votes are now being successfully passed between candidates from the same party:
+
+```{r echo=FALSE}
+#Change in self transfer over time
+collected_transfers_self <- read_and_melt_4_grids('matrix','self')
+collected_transfers_self <- subset(collected_transfers_self,transferTo==transferFrom)
+
+#TUV, Alliance 07,11 only 1 case, but keep anyway.
+#Not using correction for numPartiesLeft because doesn't make a big difference
+#  to plot, and don't know how well it would apply to self-transfers as more
+#  parties become available anyway.
+
+collected_transfers_self <- subset(collected_transfers_self, !is.na(fraction))
+collected_transfers_self <- subset(collected_transfers_self, transferFrom != 'Ind')
+
+year_av_transfers_self <- collected_transfers_self %>% group_by(year) %>% summarise(average=mean(fraction))
+collected_transfers_self <- merge(collected_transfers_self,year_av_transfers_self,by='year')
+
+#collected_transfers_self$year <- factor(collected_transfers_self$year)
+ggplot(collected_transfers_self) + geom_point(aes(year,fraction,colour=transferFrom)) +
+  geom_line(aes(year,fraction,colour=transferFrom,group=transferFrom)) +
+  geom_point(aes(year,average),colour='black',size=2.2) + 
+  geom_line(aes(year,average,group=1),colour='black',size=1) +
+  labs(y='Fraction self-transferred',x='Year',colour='',
+       title='Fraction of votes transferred to same party when available') +
+  theme(plot.title=element_text(size=12))
+```
+
+If voters ranked candidates by party and filled out their ballots completely, fractions of 1 would be expected here. The fact that the fractions are considerably lower than 1, particularly for UUP and Alliance votes, suggests that voters often deviate from party lines when ranking candidates. However, in the last few elections, SDLP, UUP, and Alliance voters seem to have been catching up with DUP and SF voters in their self-transfer consistency. The high TUV values come from just one constituency in each of 2011 and 2016.
+
+
+```{r echo=FALSE}
+collected_transfers_nu <- rbind(data.frame(fullTra2007All,year=2007),
+                              data.frame(fullTra2011All,year=2011),
+                              data.frame(fullTra2016All,year=2016),
+                              data.frame(fullTra2017All,year=2017))
+collected_transfers_nu <- subset(collected_transfers_nu, !is.na(fraction))
+uni_parties <- c('DUP','NI Cons','PUP','SBU','TUV','UUP','UKUP')
+nat_parties <- c('SF','SDLP','RSF','PBP','Workers')
+collected_transfers_nu$fromUni <- collected_transfers_nu$transferFrom %in% uni_parties
+collected_transfers_nu$fromNat <- collected_transfers_nu$transferFrom %in% nat_parties
+collected_transfers_nu$toUni <- collected_transfers_nu$transferTo %in% uni_parties
+collected_transfers_nu$toNat <- collected_transfers_nu$transferTo %in% nat_parties
+uni_fracs <- collected_transfers_nu %>% group_by(transferFrom,year) %>% filter(fromUni) %>%
+  summarise(uniSelf=sum(ifelse(toUni,fraction,0))) %>% 
+  group_by(year) %>% summarise(Unionist=mean(uniSelf))
+nat_fracs <- collected_transfers_nu %>% group_by(transferFrom,year) %>% filter(fromNat) %>%
+  summarise(natSelf=sum(ifelse(toNat,fraction,0))) %>% 
+  group_by(year) %>% summarise(Nationalist=mean(natSelf))
+uni_nat_fracs <- melt(merge(uni_fracs,nat_fracs,by='year'),id.vars='year')
+#uni_nat_fracs <- melt(rbind(uni_fracs,nat_fracs),id.vars=c('year','bloc'))
+
+ggplot(uni_nat_fracs) + geom_point(aes(factor(year),value,colour=variable),size=2.5) +
+  geom_line(aes(factor(year),value,colour=variable,group=variable),size=1) + 
+  ylim(0.5,0.7) +
+  labs(y='Fraction transferred',x='Year',colour='Bloc',
+       title='Votes transferred within blocs (all counts)') +
+  scale_colour_manual(values = c('Unionist'='orange','Nationalist'='green3'))
+
+```
+
+Considering all counts (not just those with self-transfer available), only around 60% of votes are transferred within unionist (defined here as any party with 'Unionist' in the title plus NI Conservatives) or nationalist (defined somewhat loosely as SF, SDLP, RSF, PBP, and Workers) blocs, and this figure has fallen since 2007. Unionist votes are more frequently kept within the bloc; this occurs both via significantly fewer votes being lost compared to nationalists (particularly in 2017: 7% vs 15%), and a greater likelihood for nationalist votes to transfer to centrist, non-sectarian parties or independent candidates. In both cases, 4--7% of votes are transferred from one bloc to the other.

@@ -1,6 +1,7 @@
 #Make alternative first pref files from electionsni.org data
+library(dplyr)
 
-year <- '2011'
+year <- '2007'
 for (constit_file in Sys.glob(paste0('data/',year,'_archive_datapackage/constituency/*/Count.csv'))) {
   constit <- strsplit(constit_file,'/')[[1]][4]
   print(constit)

@@ -1,10 +1,13 @@
 data/
+fp2007/
 fp2011/
 fp2016/
 fp2017/
+transferProbs2007/
 transferProbs2011/
 transferProbs2016/
 transferProbs2017/
 .ipynb_checkpoints/
 .RData
 .Rhistory
+.httr-oauth

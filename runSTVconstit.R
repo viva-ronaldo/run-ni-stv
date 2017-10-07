@@ -3,129 +3,61 @@ library(stringr)
 library(doMC)
 registerDoMC(cores=2)
 library(dplyr)
+library(reshape2)
+library(ggplot2)
+source('buildList_functions.R')
+source('fill_grid_gaps.R')
 source('tmpfunctions.R')
 
-#First try to reproduce all 2016 results, possibly also getting close to 
-#  count by count progress. ~10k ballots is usually robust, but may prefer 
-#  an ensemble of ~1-3k samples to capture uncertainty in transfer probs.
-#Maybe do 10k sample, then if any come down to 1%, redo as ensemble of 10x1000?
-
-#TODO: see if can get more transfer fracs, e.g. foyle 2016 noself only have DUP and SDLP.
+#TODO: Use numP correction on local grid when combining. Look at Gr->All in Str16, seems 60%.
+#TODO: Modify nw transfer grid by fps? Probably some relation beyond nw fracs vs nw fps.
+#  Try using the long list to fit glm of nw grid and local grid transfers and FPs.
 #TODO: Need to get fair measure of candidate transfer friendliness, esp so
 #  can use last election to nudge cases like Sugden away from generic Ind.
-#TODO: use previous year unionist and nationalist total vote to work out
-#  if a new Ind is uni or nat.
-#  - or for now just set Ind transfers to UUP when no self available, plus DUP->UUP.
-#TODO: make visualisation for diffs in transfers year to year and nw vs local.
-#TODO: check special self transfer rule working.
-#  Probably affects BW16, too much SF->SDLP. May also fix Strangford
-#TODO: record all transfers along with FPs and use to adjust transfer probs
-#  dependent on FPs. Want to see Sugden increase in EL2016; Menagh increase
-#  in Str2016, also fewer transfers to DUP3 in Str2016.
-#  Modify nw transfer grid by fps? Probably some relation beyond nw fracs vs nw fps.
-#TODO: handle downward trend in mean votes_lost (ballots getting longer). From 2011
-#  to 2016 everyone's transfers went up, but SF, SDLP went up least since their
-#  FP vote went down most.
-#TODO: try including hist local transfers. Look at Gr->All in Str16, seems 60%.
+#TODO: check if there has been a downward trend in votes lost and if so handle it.
+#TODO: is there any chance of predicting changes in overall transfer fracs
+#  based on changes in FPs of each party, trajectory of transfer frac?
+#  e.g. PBP->SDLP in 07-17 was 0.006,0.04,0.05,0.05.
 
 
 #Limits:
-#Looks like D Kelly got about twice as many transfers from Alliance in 2017 as 2016
-#  UB16 partly due to self transfers too low, also helped by increased DUP->UUP.
-#  SA wrong as All doesn't get enough from Green and SDLP too many from UUP3.   
-#Switches in 2016: UB, SA, SD, FST, WT, Foyle, ELD, LV, BW
-
-#Transfer matrix must take into account availability of each target at each
-#  elimination/election. Particularly with regard to self transfers.
-#  For now this matrix is a rough but usable one.
-#fullTransfers2016 <- read.csv('transferProbs2016/transferMatrix_all_nationwide.csv',header=TRUE,check.names=FALSE)
-fullTransfersSelf2016 <- read.csv('transferProbs2016/transferMatrix_whenSelfAvailable_nationwide.csv',header=TRUE,check.names=FALSE)
-fullTransfersRest2016 <- read.csv('transferProbs2016/transferMatrix_whenSelfNotAvailable_nationwide.csv',header=TRUE,check.names=FALSE)
-fullTransfersSelf2016[!is.na(fullTransfersSelf2016) & fullTransfersSelf2016==0] <- 0.001
-fullTransfersRest2016[!is.na(fullTransfersRest2016) & fullTransfersRest2016==0] <- 0.001
-
-fullTransfersSelf2011 <- read.csv('transferProbs2011/transferMatrix_whenSelfAvailable_nationwide.csv',header=TRUE,check.names=FALSE)
-fullTransfersRest2011 <- read.csv('transferProbs2011/transferMatrix_whenSelfNotAvailable_nationwide.csv',header=TRUE,check.names=FALSE)
-fullTransfersSelf2011[!is.na(fullTransfersSelf2011) & fullTransfersSelf2011==0] <- 0.001
-fullTransfersRest2011[!is.na(fullTransfersRest2011) & fullTransfersRest2011==0] <- 0.001
-
-
-constituencies <- c('Belfast North','Belfast West','Belfast East','Belfast South',
-                    'North Antrim','East Antrim','South Antrim','Strangford',
-                    'Lagan Valley','Upper Bann','North Down','South Down',
-                    'Newry Armagh','East Londonderry','Fermanagh South Tyrone',
-                    'Foyle','West Tyrone','Mid Ulster')
-constituencies_lowerdash <- as.character(sapply(constituencies, function(c) 
-  paste(strsplit(tolower(c),' ')[[1]],collapse='-')))
-constituencies_lower <- as.character(sapply(constituencies, function(c) 
-  paste(strsplit(tolower(c),' ')[[1]],collapse='')))
-
-get_local_transfers <- function(situation,year,constituencies_lowerdash) {
-  list_grids <- list()
-  for (constit in constituencies_lowerdash) {
-    list_grids[[constit]] <- read.csv(sprintf('transferProbs%d/transferMatrix_%s_%s.csv',
-                                              year,situation,constit),
-                                      header=TRUE,check.names=FALSE)
-  }
-  list_grids
-}
-#localTransfers2016 <- get_local_transfers('all',2016,constituencies_lowerdash)
-localTransfersSelf2016 <- get_local_transfers('whenSelfAvailable',2016,constituencies_lowerdash)
-localTransfersRest2016 <- get_local_transfers('whenSelfNotAvailable',2016,constituencies_lowerdash)
-
-combine_transfer_grids <- function(fullgrid,localgrid,alpha) {
-  goodvals <- (!is.na(fullgrid))*alpha + (!is.na(localgrid))*(1-alpha)
-  fullgrid[is.na(fullgrid)] <- 0
-  localgrid[is.na(localgrid)] <- 0
-  combgrid <- (fullgrid*alpha + localgrid*(1-alpha))/goodvals
-  return(combgrid)
-}
-
-#e.g. Foyle has DUP->SDLP 0.66 because no unionists left
-runConstit('Foyle',year,NULL,fullTransfersSelf2016,fullTransfersRest2016,3000)
-runConstit('Foyle',year,NULL,localTransfersSelf2016[['foyle']],localTransfersRest2016[['foyle']],3000)
-runConstit('Foyle',year,NULL,
-           combine_transfer_grids(fullTransfersSelf2016,localTransfersSelf2016[['foyle']],0.5),
-           combine_transfer_grids(fullTransfersRest2016,localTransfersRest2016[['foyle']],0.5),3000)
+#  Looks like D Kelly got about twice as many transfers from Alliance in 2017 as 2016
+#  UB16: all->SDLP similarly overestimated in 11 as in 16, so local helps here.
+#  SA16, SDLP too many from UUP3. But UUP->SDLP was as expected in 2011.
+#  BW16 with 11 probs, in 1 grid mode DUP can get in; seems to be due to bigger
+#    underestimate of PBP->SDLP, also slightly more from small parties to DUP.
+#  EA16 40% nw not 1grid, or 60% with nSample 6000, or correct full sample, or 60% 3000 comb0.1;
+#    with 1grid, seems always wrong.
+#-> Problems in 2016 are BW,SA,EA,Str. BW was close so OK; UB close and could
+#     be improved by local; Str ??.
+#DUP->UUP increased by 1/3 2011->16, which is probably unpredictable so a big problem.
+#
+#  UB11:
+#  ELD11: UUP2 too much from All, and order of elect/elim at end is wrong meaning big SF->UUP2;
+#    1grid affected by grouping which gives big UUP self-t in count 1.
+#  FST11: 1grid better than self/rest; self/rest UUP->SDLP too high; local doesn't help much
+#    because only have a rest UUP->SDLP and need it to apply moreso in self situation (i.e. at start).
+#    Even with UUP->DUP bigger than UUP->SDLP prob by 6-10x, when transfer happens it is only ~2x
+#    in favour of DUP, can't understand why. Seems to be that DUP do get more at start of lists
+#    but some votes pass via eliminated parties to SDLP which closes the gap. But there is only
+#    Ind,TUV,All, and overall these look as likely to pass to DUP as to SDLP.
 
 
-#Possible problems: 
-# - UUP to SDLP when no self available seems high at 0.20, vs 0.30 to DUP (BN doesn't show this at all)
-# - should have a PBP self for 2017 BW, check why not
+#TODO May need to alter local grid values before combining, to be most accurate.
 
-#How to combine grids:
-#goodvals <- (!is.na(traFull)) + (!is.na(traIndiv))
-#traFull[is.na(traFull)] <- 0
-#traIndiv[is.na(traIndiv)] <- 0
-#traComb <- (traFull + traIndiv)/goodvals
-
-#Rough transfer-friendliness:
-#for (col in names(fullTransfers)) { cat(col,sum(fullTransfers[,col],na.rm=TRUE),'\n') }
-
-get_party_map <- function() {
-  partyMap <- vector('list')
-  parties_with_multiple_cands <- c('Sinn Fein','Democratic Unionist Party','Ulster Unionist Party',
-                                   'Social Democratic and Labour Party','Alliance Party',
-                                   'People Before Profit Alliance','Independent',
-                                   'Traditional Unionist Voice','NI Conservatives')
-  for (party in parties_with_multiple_cands) {
-    for (ind in 1:5) {
-      partyMap[paste(party,ind)] <- party
-    }
-  }
-  for (party in c('Animal Welfare Party','Cannabis Is Safer Than Alcohol',
-                  'Cross-Community Labour Alternative','Democracy First',
-                  'Green Party',
-                  'Labour Alternative','NI Labour Representation Committee',
-                  'Northern Ireland First','Progressive Unionist Party',
-                  'South Belfast Unionists','UK Independence Party',
-                  'Workers Party','votes_lost',parties_with_multiple_cands)) {
-    partyMap[party] <- party
-  }
-  return(partyMap)
-}
-partyMap <- get_party_map()
-#partyMap['Northern Ireland First'] <- 'Northern Ireland First'  #temporary
+#2016:
+#EA was close between SF, UKIP, UUP2 - accept 30-50%
+#BW was close between SDLP and DUP
+#UB was close between SF2 and SDLP - accept 40-60%
+#Str was close between UUP and SDLP because UUP could have been knocked out by DUP4 or Ind
+#2011:
+#BN was a bit close between DUP3 and UUP
+#BS was a bit close between SF, SDLP, DUP
+#UB was a bit close between UUP2, SDLP, SF
+#ND was close between Green and All2 (Ind may have chance too)
+#ELD was a bit close between DUP3 and UUP, seems tricky due to order - accept 50-60%
+#FST was very close between SF3 and SDLP (accept 50%)
+#WT was close between UUP and DUP2
 
 party_short_names <- list('Democratic Unionist Party'='DUP',
                           'Ulster Unionist Party'='UUP',
@@ -148,7 +80,102 @@ party_short_names <- list('Democratic Unionist Party'='DUP',
                           'Democracy First'='DF',
                           'Northern Ireland First'='NIF',
                           'UK Independence Party'='UKIP',
+                          'Socialist Party'='Soc',
+                          'British Nationalist Party'='BNP',
+                          'Procapitalism'='Cap',
+                          'UK Unionist Party'='UKUP',
+                          'Socialist Environmental Alliance'='SEA',
+                          'Republican Sinn Fein'='RSF',
+                          'Labour Party'='Lab',
+                          'Make Politicians History'='MPH',
                           'votes_lost'='votes_lost')
+
+constituencies <- c('Belfast North','Belfast West','Belfast East','Belfast South',
+                    'North Antrim','East Antrim','South Antrim','Strangford',
+                    'Lagan Valley','Upper Bann','North Down','South Down',
+                    'Newry Armagh','East Londonderry','Fermanagh South Tyrone',
+                    'Foyle','West Tyrone','Mid Ulster')
+constituencies_lowerdash <- as.character(sapply(constituencies, function(c) 
+  paste(strsplit(tolower(c),' ')[[1]],collapse='-')))
+constituencies_lower <- as.character(sapply(constituencies, function(c) 
+  paste(strsplit(tolower(c),' ')[[1]],collapse='')))
+
+#Transfer matrix must take into account availability of each target at each
+#  elimination/election. Particularly with regard to self transfers.
+#  For now this matrix is a rough but usable one.
+#fullTransfers2016 <- read.csv('transferProbs2016/transferMatrix_all_nationwide.csv',header=TRUE,check.names=FALSE)
+fullTransfersSelf2016 <- read.csv('transferProbs2016/transferMatrix_whenSelfAvailable_nationwide.csv',header=TRUE,check.names=FALSE)
+fullTransfersRest2016 <- read.csv('transferProbs2016/transferMatrix_whenSelfNotAvailable_nationwide.csv',header=TRUE,check.names=FALSE)
+fullTransfersSelf2016[!is.na(fullTransfersSelf2016) & fullTransfersSelf2016==0] <- 0.001
+fullTransfersRest2016[!is.na(fullTransfersRest2016) & fullTransfersRest2016==0] <- 0.001
+
+fullTransfersSelf2011 <- read.csv('transferProbs2011/transferMatrix_whenSelfAvailable_nationwide.csv',header=TRUE,check.names=FALSE)
+fullTransfersRest2011 <- read.csv('transferProbs2011/transferMatrix_whenSelfNotAvailable_nationwide.csv',header=TRUE,check.names=FALSE)
+fullTransfersSelf2011[!is.na(fullTransfersSelf2011) & fullTransfersSelf2011==0] <- 0.001
+fullTransfersRest2011[!is.na(fullTransfersRest2011) & fullTransfersRest2011==0] <- 0.001
+
+traRest2011Filled <- get_grid_with_gaps_filled(2011,'rest',party_short_names)
+
+get_local_transfers <- function(situation,year,constituencies_lowerdash) {
+  list_grids <- list()
+  for (constit in constituencies_lowerdash) {
+    list_grids[[constit]] <- read.csv(sprintf('transferProbs%d/transferMatrix_%s_%s.csv',
+                                              year,situation,constit),
+                                      header=TRUE,check.names=FALSE)
+  }
+  list_grids
+}
+#localTransfers2016 <- get_local_transfers('all',2016,constituencies_lowerdash)
+localTransfersSelf2016 <- get_local_transfers('whenSelfAvailable',2016,constituencies_lowerdash)
+localTransfersRest2016 <- get_local_transfers('whenSelfNotAvailable',2016,constituencies_lowerdash)
+localTransfersAll2016 <- get_local_transfers('all',2016,constituencies_lowerdash)
+localTransfersSelf2011 <- get_local_transfers('whenSelfAvailable',2011,constituencies_lowerdash)
+localTransfersRest2011 <- get_local_transfers('whenSelfNotAvailable',2011,constituencies_lowerdash)
+localTransfersAll2011 <- get_local_transfers('all',2011,constituencies_lowerdash)
+localTransfersSelf2007 <- get_local_transfers('whenSelfAvailable',2007,constituencies_lowerdash)
+localTransfersRest2007 <- get_local_transfers('whenSelfNotAvailable',2007,constituencies_lowerdash)
+localTransfersAll2007 <- get_local_transfers('all',2007,constituencies_lowerdash)
+
+
+combine_transfer_grids <- function(fullgrid,localgrid,alpha) {
+  goodvals <- (!is.na(fullgrid))*alpha + (!is.na(localgrid))*(1-alpha)
+  fullgrid[is.na(fullgrid)] <- 0
+  localgrid[is.na(localgrid)] <- 0
+  combgrid <- (fullgrid*alpha + localgrid*(1-alpha))/goodvals
+  return(combgrid)
+}
+
+#e.g. Foyle has DUP->SDLP 0.66 because no unionists left
+runConstit('Foyle',year,fullTransfersSelf2016,fullTransfersRest2016,3000)
+runConstit('Foyle',year,localTransfersSelf2016[['foyle']],localTransfersRest2016[['foyle']],3000)
+runConstit('Foyle',year,
+           combine_transfer_grids(fullTransfersSelf2016,localTransfersSelf2016[['foyle']],0.5),
+           combine_transfer_grids(fullTransfersRest2016,localTransfersRest2016[['foyle']],0.5),3000)
+
+#Possible problems: 
+# - UUP to SDLP when no self available seems high at 0.20, vs 0.30 to DUP (BN doesn't show this at all)
+# - should have a PBP self for 2017 BW, check why not
+
+#How to combine grids:
+#goodvals <- (!is.na(traFull)) + (!is.na(traIndiv))
+#traFull[is.na(traFull)] <- 0
+#traIndiv[is.na(traIndiv)] <- 0
+#traComb <- (traFull + traIndiv)/goodvals
+
+#Rough transfer-friendliness:
+#for (col in names(fullTransfers)) { cat(col,sum(fullTransfers[,col],na.rm=TRUE),'\n') }
+
+get_party_map <- function(all_parties) {
+  partyMap <- vector('list')
+  for (party in all_parties) {
+    partyMap[party] <- party
+    for (ind in 1:5) {
+      partyMap[paste(party,ind)] <- party
+    }
+  }
+  return(partyMap)
+}
+partyMap <- get_party_map(names(party_short_names))
 
 replist <- function(arg, times) lapply(seq(times), function(i) arg)
 
@@ -172,14 +199,16 @@ getUnionistPercent <- function(firstPrefs) {
   sum(subset(firstPrefs, cand %in% c('Democratic Unionist Party','Ulster Unionist Party',
                                      'Progressive Unionist Party','Traditional Unionist Voice',
                                      'UK Independence Party','NI Conservatives',
-                                     'South Belfast Unionists'))$percent)
+                                     'South Belfast Unionists','UK Unionist Party'))$percent)
 }
 getNationalistPercent <- function(firstPrefs) {
   firstPrefs$cand <- as.character(firstPrefs$cand)
   firstPrefs$cand <- as.character(sapply(firstPrefs$cand, function(n) ifelse(grepl('[:alnum:]* [1-5]',n),
                                                                              substr(n,1,nchar(n)-2),n)))
   sum(subset(firstPrefs, cand %in% c('Sinn Fein','Social Democratic and Labour Party',
-                                     'People Before Profit Alliance','Workers Party'))$percent)
+                                     'People Before Profit Alliance','Workers Party',
+                                     'Republican Sinn Fein','Socialist Party',
+                                     'Socialist Environmental Alliance'))$percent)
 }
 getIndependentPercent <- function(firstPrefs) {
   firstPrefs$cand <- as.character(firstPrefs$cand)
@@ -189,128 +218,91 @@ getIndependentPercent <- function(firstPrefs) {
 }
 #TODO update for 2011,2007 parties
 
-for (constit in c('newryarmagh','northdown','southdown')) {
-  cat(constit,'\n')
+for (constit in constituencies_lower) {
+  #cat(constit,'\n')
   for (year in c(2011,2016,2017)) {
+    prevyear <- list('2011'=2007,'2016'=2011,'2017'=2016)[[as.character(year)]]
     up <- getUnionistPercent(getFirstPrefs(paste0('fp',year,'/alt/',constit,year,'alt.csv')))
     np <- getNationalistPercent(getFirstPrefs(paste0('fp',year,'/alt/',constit,year,'alt.csv')))
     ip <- getIndependentPercent(getFirstPrefs(paste0('fp',year,'/alt/',constit,year,'alt.csv')))
-    cat(year,sprintf('Uni = %.1f, Nat = %.1f, Ind = %.1f\n',up,np,ip))
+    up_prev <- getUnionistPercent(getFirstPrefs(paste0('fp',prevyear,'/alt/',constit,prevyear,'alt.csv')))
+    np_prev <- getNationalistPercent(getFirstPrefs(paste0('fp',prevyear,'/alt/',constit,prevyear,'alt.csv')))
+    ip_prev <- getIndependentPercent(getFirstPrefs(paste0('fp',prevyear,'/alt/',constit,prevyear,'alt.csv')))
+    uni_down <- FALSE
+    nat_down <- FALSE
+    if ((up-up_prev) < -2 & (np-np_prev) < -2) {
+      if ((up-up_prev) < (np-np_prev)) {
+        uni_down <- TRUE
+      } else { nat_down <- TRUE }
+    } else if ((up-up_prev) < -2) { uni_down <- TRUE 
+    } else if ((np-np_prev) < -2) { nat_down <- TRUE }
+    if (uni_down & (ip-ip_prev > 2)) {
+      cat(sprintf('Unionist Ind %s %s: Uni = %.1f (%+.1f), Nat = %.1f (%+.1f), Ind = %.1f (%+.1f)\n',
+                               constit,year,up,up-up_prev,np,np-np_prev,ip,ip-ip_prev))  
+    }
+    if (nat_down & (ip-ip_prev > 2)) {
+      cat(sprintf('Nationalist Ind %s %s: Uni = %.1f (%+.1f), Nat = %.1f (%+.1f), Ind = %.1f (%+.1f)\n',
+                  constit,year,up,up-up_prev,np,np-np_prev,ip,ip-ip_prev))  
+    }
   }
 }
 #When Ind goes up by >~2 and u/n down by similar amount, can assume that Ind as 
 #  a group has become more u/n.
-#Rule doesn't work for EL 16/17, LV 16/17, SD 11/16. 
-#Best is Str 11/16 (would it work 16/17?), WT 11/16. NwA 11/16 both u/n but could work.
-#  Fy 11/16 didn't matter as Ind never transferred.
+#Works for BE 07/11, ND 07/11, ELD 07/11, Str 11/16, Str 16/17, WT 11/16, Fy 11/16
+#Rule doesn't work for EL 16/17, LV 16/17, misidentifies SD 11/16, NwA 11/16, ELD 16/17
 #Maybe need to use prev local for Inds and then update that using the u/n change.
 
-buildList <- function(vote, candidates, transfers, adjusts,
-                      useSplit, transfersSelf, transfersRest) {
-    
-  while (length(vote) < length(candidates)) {
 
-    stillToUse <- setdiff(candidates,vote)
-    stillToUse <- union(stillToUse,'votes_lost')
-    
-    if (useSplit) {
-        #print(partyMap[vote[length(vote)]])
-        #print(stillToUse)
-        if (partyMap[vote[length(vote)]] %in% sapply(stillToUse, function(p) partyMap[p])) {
-            if (as.character(partyMap[vote[length(vote)]]) %in% rownames(transfersSelf)) {
-                probs <- unlist(sapply(stillToUse, function(p) { transfersSelf[as.character(partyMap[vote[length(vote)]]),
-                                                                           as.character(partyMap[p])]}))
-            } else {
-                print(paste("Don't know self transfer prob for ",vote[length(vote)]))
-                print('Using 0.75 for self and dividing rest evenly')
-                numNonSelfCands <- sum(unlist(sapply(stillToUse, function(p) 
-                    ifelse(as.character(partyMap[p])==as.character(partyMap[vote[length(vote)]]),0,1))))
-                probs <- unlist(sapply(stillToUse, function(p) 
-                    ifelse(as.character(partyMap[p])==as.character(partyMap[vote[length(vote)]]),0.75,0.25/numNonSelfCands) ))
-            }
-            
-        } else {
-            probs <- unlist(sapply(stillToUse, function(p) { transfersRest[as.character(partyMap[vote[length(vote)]]),
-                                                                       as.character(partyMap[p])]}))
-        }
-    } else {
-        probs <- unlist(sapply(stillToUse, function(p) { transfers[as.character(partyMap[vote[length(vote)]]),
-                                                                   as.character(partyMap[p])]}))
-        #probs <- sapply(stillToUse, function(p) { transfers[as.character(partyMap[vote[1]]),
-        #                                                    as.character(partyMap[p])]})
-        #Not sure which one of the above is better
-    }
-    #print(vote[length(vote)])
-    #print(stillToUse)
-    #print(probs)
-    
-    #if (vote[length(vote)] == 'Alliance Party') {
-    #  print('---1---')
-    #  print(probs)
-    #}
-    #If same party present more than once, probs must be divided
-    partiesOnly <- as.character(sapply(stillToUse, function(p) partyMap[as.character(p)]))
-    partyCounts <- table(partiesOnly)
-    for (m in 2:5) {
-        multiples <- names(partyCounts)[partyCounts==m]
-        for (p in multiples) {
-            probs[grepl(p,stillToUse)] <- probs[grepl(p,stillToUse)] / m
-        }
-    }
-    #but adjust for unequal share among candidates from that party
-    for (i in seq(length(probs))) {
-        if (stillToUse[i] != 'votes_lost') {
-            probs[i] <- probs[i] * adjusts[adjusts$cand==stillToUse[i],'adjust']    
-        }
-    }
-    
-    #for now use a low-ish default. TODO: use grids with no gaps to avoid this
-    # cat(sum(is.na(probs)),'NAs\n')
-    # if (sum(is.na(probs)) > 0) {
-    #   print(vote[length(vote)])
-    #   print(probs)
-    # }
-    probs[is.na(probs)] <- 0.05
-    
-    #votes_lost stays at its true value and rest are normalised around it
-    #probs <- probs*1/sum(probs)
-    probs[names(probs) != 'votes_lost'] <- probs[names(probs) != 'votes_lost'] * 
-      (1-probs[['votes_lost']]) / sum(probs[names(probs) != 'votes_lost'])
-    #if (vote[length(vote)] == 'Sinn Fein 2') {
-    #  print('---3---')
-    #  print(probs)
-    #}
-    
-    nextpref <- sample(stillToUse,1,prob=probs)
-    if (nextpref == 'votes_lost') { 
-      break
-    } else {
-      vote <- c(vote,nextpref)
-    }
-  }
-  list(vote)
-}
-
-runConstit <- function(constitName, year, transfersAll, transfersSelf, transfersRest, nSample) {
+runConstit <- function(constitName, year, transfersSelf, transfersRest, nSample,
+                       use_1grid_buildlist=FALSE, use_party_1_for_transfers=FALSE) {
+  infer_independent <- TRUE
+  
   print(constitName)
-  resultsFile <- paste0('fp',year,'/',str_replace_all(tolower(constitName),' ',''),year,'.csv')
+  #resultsFile <- paste0('fp',year,'/',str_replace_all(tolower(constitName),' ',''),year,'.csv')
+  resultsFile <- paste0('fp',year,'/alt/',str_replace_all(tolower(constitName),' ',''),year,'alt.csv')
   nSeats <- ifelse(year >= 2017, 5, 6)
   
   firstPrefs <- getFirstPrefs(resultsFile)
   if ( sum(firstPrefs$percent) < 98 ) { print('Below 100%!!!')}
   if ( sum(firstPrefs$percent) > 102 ) { print('Over 100%!!!')}
   
-  #TODO count nat/uni vote
-  # new_unionist_pc <- getUnionistPercent(firstPrefs)
-  # new_nationalist_pc <- getNationalistPercent(firstPrefs)
-  # prev_year <- list('2017'=2016,'2016'=2011,'2011'=2007)[[as.character(year)]]
-  # prev_resultsFile <- paste0('fp',prev_year,'/',
-  #                            str_replace_all(tolower(constitName),' ',''),prev_year,'.csv')
-  # prev_first_prefs <- getFirstPrefs(prev_resultsFile)
-  # prev_unionist_pc <- getUnionistPercent(prev_first_prefs)
-  # prev_nationalist_pc <- getNationalistPercent(prev_first_prefs)
-  # cat('Change in unionist pc: ',new_unionist_pc-prev_unionist_pc,'\n')
-  # cat('Change in nationalist pc: ',new_nationalist_pc-prev_nationalist_pc,'\n')
+  if (infer_independent) {
+    new_unionist_pc <- getUnionistPercent(firstPrefs)
+    new_nationalist_pc <- getNationalistPercent(firstPrefs)
+    new_ind_pc <- getIndependentPercent(firstPrefs)
+    prev_year <- list('2017'=2016,'2016'=2011,'2011'=2007)[[as.character(year)]]
+    prev_resultsFile <- paste0('fp',prev_year,'/alt/',
+                               str_replace_all(tolower(constitName),' ',''),prev_year,'alt.csv')
+    prev_first_prefs <- getFirstPrefs(prev_resultsFile)
+    prev_unionist_pc <- getUnionistPercent(prev_first_prefs)
+    prev_nationalist_pc <- getNationalistPercent(prev_first_prefs)
+    prev_ind_pc <- getIndependentPercent(prev_first_prefs)
+    cat('Change in unionist pc: ',new_unionist_pc-prev_unionist_pc,'\n')
+    cat('Change in nationalist pc: ',new_nationalist_pc-prev_nationalist_pc,'\n')
+    cat('Change in independent pc: ',new_ind_pc-prev_ind_pc,'\n')
+    uni_down <- FALSE
+    nat_down <- FALSE
+    if ((new_unionist_pc-prev_unionist_pc) < -2 & (new_nationalist_pc-prev_nationalist_pc) < -2) {
+      if ((new_unionist_pc-prev_unionist_pc) < (new_nationalist_pc-prev_nationalist_pc)) {
+        uni_down <- TRUE
+      } else { nat_down <- TRUE }
+    } else if ((new_unionist_pc-prev_unionist_pc) < -2) { uni_down <- TRUE 
+    } else if ((new_nationalist_pc-prev_nationalist_pc) < -2) { nat_down <- TRUE }
+    ind_up <- (new_ind_pc - prev_ind_pc > 2)
+    if (uni_down & ind_up) {
+      transfersSelf['Independent',] <- transfersSelf['Ulster Unionist Party',]
+      transfersSelf['Independent','Ulster Unionist Party'] <- transfersSelf['Democratic Unionist Party','Ulster Unionist Party']
+      transfersRest['Independent',] <- transfersRest['Ulster Unionist Party',]
+      transfersRest['Independent','Ulster Unionist Party'] <- transfersRest['Democratic Unionist Party','Ulster Unionist Party']
+      cat('Treating Ind as unionist\n')
+    } else if (nat_down & ind_up) {
+      transfersSelf['Independent',] <- transfersSelf['Sinn Fein',]
+      transfersSelf['Independent','Sinn Fein'] <- transfersSelf['Social Democratic and Labour Party','Sinn Fein']
+      transfersRest['Independent',] <- transfersRest['Sinn Fein',]
+      transfersRest['Independent','Sinn Fein'] <- transfersRest['Social Democratic and Labour Party','Sinn Fein']
+      cat('Treating Ind as nationalist\n')
+    }
+  }
   
   #get factors for distributing transfers among candidates from same party
   parties <- unique(as.character(sapply(firstPrefs$cand, function(p) partyMap[as.character(p)])))
@@ -325,26 +317,28 @@ runConstit <- function(constitName, year, transfersAll, transfersSelf, transfers
     votes <- c(votes, replist(as.character(firstPrefs$cand[i]), firstPrefs$number[i]))
   }
 
-  #ts <- proc.time()
   fullvotes <- c()
   #slow to run, so sampling the total ~40k at the moment
   for (vote in sample(votes, nSample, replace=FALSE)) {
-    fullvotes <- c(fullvotes, buildList(vote, firstPrefs$cand, transfersAll,
-                                        firstPrefs[,c('cand','adjust')],
-                                        TRUE, transfersSelf, transfersRest))
+    if (use_1grid_buildlist) {
+      fullvotes <- c(fullvotes, buildList_1grid(vote, firstPrefs$cand,
+                                                firstPrefs[,c('cand','adjust')],
+                                                transfersSelf))  #Self OK?  
+    } else {
+      fullvotes <- c(fullvotes, buildList(vote, firstPrefs$cand, 
+                                          firstPrefs[,c('cand','adjust')],
+                                          transfersSelf, transfersRest,
+                                          use_party_1_for_transfers=use_party_1_for_transfers))
+    }
   }
-  #cat('Building list took ',(proc.time()-ts)[1],'s\n')
   # fullvotes <- foreach (vote = sample(votes, nSample, replace=FALSE), .combine=c) %dopar% 
-  #     buildList(vote, firstPrefs$cand, transfersAll, firstPrefs[,c('cand','adjust')],
-  #               TRUE, transfersSelf, transfersRest)
+  #     buildList(vote, firstPrefs$cand, firstPrefs[,c('cand','adjust')],
+  #               transfersSelf, transfersRest)
 
-  #print("Ballot length summary:")
-  #print(summary(sapply(fullvotes,length)))
   #print("Elected using STV:")
   #elected2 <- stv(fullvotes, nSeats)$winners[1:(nSeats+1)]
   elected2 <- my_stv(fullvotes, nSeats, verbose=TRUE)$winners  #testing
   elected3 <- sapply(elected2, function(p) { as.character(partyMap[p]) })
-  #print(table(elected3[1:nSeats]))
   
   res2 <- data.frame()
   count <- 1
@@ -359,40 +353,68 @@ runConstit <- function(constitName, year, transfersAll, transfersSelf, transfers
   res2
 }
 
-#runConstit('South Antrim','fp2016/southAntrim2016.csv', 6, fullTransfers, fullTransfersSelf, fullTransfersRest, 1000)
-
-runAllConstits <- function(year, transfersAll, transfersSelf, transfersRest) {
-    constituencies <- c('Belfast North','Belfast West','Belfast East','Belfast South',
-                        'North Antrim','East Antrim','South Antrim','Strangford',
-                        'Lagan Valley','Upper Bann','North Down','South Down',
-                        'Newry Armagh','East Londonderry','Fermanagh South Tyrone',
-                        'Foyle','West Tyrone','Mid Ulster')
+runConstitEnsemble <- function(constitName, year,
+                               transfersSelf, transfersRest, 
+                               nSample, nEnsemble, 
+                               use_1grid_buildlist=FALSE,use_party_1_for_transfers=FALSE,
+                               returnByParty=TRUE) {
+  res <- list()
+  res2 <- data.frame()
+  for (e in seq(nEnsemble)) {
+    capture.output(result <- runConstit(constitName,year,transfersSelf,transfersRest,nSample,
+                                        use_1grid_buildlist=use_1grid_buildlist,
+                                        use_party_1_for_transfers=use_party_1_for_transfers))
     
-    assembly <- data.frame()
-    for (constit in constituencies) {
-        assembly <- rbind(assembly, runConstit(constit,year,
-                                               transfersAll, transfersSelf, transfersRest,
-                                               1000))
-        #result <- runConstit(constit,paste0('fp',year,'/',tolower(gsub(' ','',constit)),year,'.csv'),
-        #                     ifelse(year <= 2016, 6, 5), fullTransfers, fullTransfersSelf, fullTransfersRest, 500)
-        # for (e in 1:4) {
-        #     result2 <- runConstit(constit,paste0('fp',year,'/',tolower(gsub(' ','',constit)),year,'.csv'),
-        #                          ifelse(year <= 2016, 6, 5), fullTransfers, fullTransfersSelf, fullTransfersRest, 500)
-        #     if (!setequal(table(result2$party),table(result$party))) {
-        #         print('Need bigger sample')
-        #         break
-        #     }
-        # }
-        
-        if (nrow(subset(assembly,constit=='East Londonderry' & party=='Ulster Unionist Party'))==1) {
-            #temporarily labelled Sugden a UUP for transfer purposes
-            assembly$party <- as.character(assembly$party)
-            assembly[assembly$constit=='East Londonderry' & assembly$party=='Ulster Unionist Party','party'] <- 'Independent'
-            assembly$party <- factor(assembly$party)
-        }
+    result$candp <- paste(result$party,result$cand)
+    by_party <- arrange(data.frame(party=as.character(party_short_names[names(table(result$party))]),
+                                   seats=as.integer(table(result$party))),-seats,party)
+    by_party <- paste(paste(by_party$seats,by_party$party),collapse=', ')
+    res2 <- rbind(res2,data.frame(result=by_party))
+    for (c in result$candp) {
+      res[[c]] <- ifelse(c %in% names(res), res[[c]]+1, 1)
     }
-    assembly
+  }
+  if (returnByParty) {
+    table_results <- table(res2$result)/nEnsemble
+    arrange(data.frame(result=names(table_results),prob=as.numeric(table_results)),-prob)  
+  } else {
+    res <- sapply(names(res),function(c) res[[c]]/nEnsemble)
+    res <- data.frame(cand=names(res), probElected=as.numeric(res))
+    arrange(res,-probElected)      
+  }
 }
+
+runAllConstitsEnsemble <- function(constituencies, year, transfersSelf, transfersRest,
+                                   nSample, nEnsemble, alpha=1, 
+                                   use_1grid_buildlist = FALSE,
+                                   localTransfersSelf = NULL, localTransfersRest = NULL) {
+  brier <- 0
+  num_right <- 0
+  for (constit in constituencies) {
+    #slight simplification to use 'all' for local in both cases
+    if (alpha < 1 & !is.null(localTransfersAll)) {
+      constit_dash <- as.character(paste(strsplit(tolower(constit),' ')[[1]],collapse='-'))
+      selfgrid <- combine_transfer_grids(transfersSelf,localTransfersSelf[[constit_dash]],alpha)
+      if (!use_1grid_buildlist) {
+        restgrid <- combine_transfer_grids(transfersRest,localTransfersRest[[constit_dash]],alpha)
+      } else {
+        restgrid <- NULL
+      }
+    } else {
+      selfgrid <- transfersSelf
+      restgrid <- transfersRest
+    }
+    res <- runConstitEnsemble(constit, year, selfgrid, restgrid,
+                              nSample, nEnsemble, use_1grid_buildlist = use_1grid_buildlist)
+    brier_add <- get_brier_for_constit(res,constit,year)
+    cat(constit,(1-brier_add**0.5),'\n')
+    brier <- brier + brier_add
+    if (brier_add <= 0.04) num_right <- num_right + 1
+  }
+  brier <- brier / length(constituencies)
+  list(brier=brier, num_right=num_right)
+}
+
 
 verifyAssembly <- function(mine,year) {
     if (year == 2016) {
@@ -424,20 +446,7 @@ verifyAssembly <- function(mine,year) {
 }
 
 
-assembly <- runAllConstits(2016, fullTransfers2016, fullTransfersSelf2016, fullTransfersRest2016)
-print(table(subset(assembly,seat<=6)$party))
-
-verifyAssembly(assembly,2016)
-
-
 #---- 2017
-assembly2017 <- runAllConstits(2017, fullTransfers2016, fullTransfersSelf2016, fullTransfersRest2016)
-print(table(subset(assembly2017, round<=5)$party))
-
-verifyAssembly(assembly,2017)
-
-#Updating Ind, 10k run:
-#DUP +1, SF +1, SDLP -3, UUP +2, Gr -1. Miss on BS (Gr), FST (UUP), LV,ELD,UB (SDLP); 85/90
 
 #With votes_lost, s-t 0.7, 10k run: DUP 30 (+2), SF 29 (+2), UUP 10, SDLP 9 (-3), All 8, Gr 2, PBP 1, Ind 1, TUV 0 (-1)
 #  Miss on LV (UUP/SDLP), ELD (SF/SDLP), NA (DUP/TUV), UB (SF/SDLP), FST (DUP/UUP): 85/90
@@ -445,31 +454,7 @@ verifyAssembly(assembly,2017)
 #As printed on Friday: 84/90 (missed 5/6 switches and wrong BN)
 #From top 5 first prefs: 84/90 (miss 6 switches)
 
-runConstitEnsemble <- function(constitName, year,
-                               transfersAll, transfersSelf, transfersRest, 
-                               nSample, nEnsemble, returnByParty=TRUE) {
-    res <- list()
-    res2 <- data.frame()
-    for (e in seq(nEnsemble)) {
-      capture.output(result <- runConstit(constitName,year,transfersAll,transfersSelf,transfersRest,nSample))
-      result$candp <- paste(result$party,result$cand)
-      by_party <- arrange(data.frame(party=as.character(party_short_names[names(table(result$party))]),
-                                     seats=as.integer(table(result$party))),-seats,party)
-      by_party <- paste(paste(by_party$seats,by_party$party),collapse=', ')
-      res2 <- rbind(res2,data.frame(result=by_party))
-      for (c in result$candp) {
-        res[[c]] <- ifelse(c %in% names(res), res[[c]]+1, 1)
-      }
-    }
-    if (returnByParty) {
-      table_results <- table(res2$result)/nEnsemble
-      arrange(data.frame(result=names(table_results),prob=as.numeric(table_results)),-prob)  
-    } else {
-      res <- sapply(names(res),function(c) res[[c]]/nEnsemble)
-      res <- data.frame(cand=names(res), probElected=as.numeric(res))
-      arrange(res,-probElected)      
-    }
-}
+
 get_brier_for_constit <- function(constit_ens_df,constit,year) {
   truth <- read.csv('results_for_verification.csv')
   truth <- as.character(subset(truth, Year==year & Constituency==constit)$Elected_string)
@@ -480,54 +465,123 @@ get_brier_for_constit <- function(constit_ens_df,constit,year) {
   }
 }
 
-for (constit in constituencies[11:14]) {
+fullTra2007All <- get_grid_with_gaps_filled(2007,'all',party_short_names)
+fullTra2007Self <- get_grid_with_gaps_filled(2007,'self',party_short_names)
+fullTra2007Rest <- get_grid_with_gaps_filled(2007,'rest',party_short_names)
+fullTra2011All <- get_grid_with_gaps_filled(2011,'all',party_short_names)
+fullTra2011Self <- get_grid_with_gaps_filled(2011,'self',party_short_names)
+fullTra2011Rest <- get_grid_with_gaps_filled(2011,'rest',party_short_names)
+fullTra2016All <- get_grid_with_gaps_filled(2016,'all',party_short_names)
+fullTra2016Self <- get_grid_with_gaps_filled(2016,'self',party_short_names)
+fullTra2016Rest <- get_grid_with_gaps_filled(2016,'rest',party_short_names)
+fullTra2017All <- get_grid_with_gaps_filled(2017,'all',party_short_names)
+
+for (constit in constituencies) {
   print(constit)
-  res <- runConstitEnsemble(constit,2016,NULL,fullTransfersSelf2016,
-                            fullTransfersRest2016,3000,20)
+  res <- runConstitEnsemble(constit,2016,fullTra2011Self,fullTra2011Rest,
+                            3000,10,use_1grid_buildlist = TRUE)
+  print(res)
+}
+print('Now 2016 for 2016')
+for (constit in constituencies) {
+  print(constit)
+  res <- runConstitEnsemble(constit,2016,fullTra2016All,fullTra2016Rest,
+                            3000,10,use_1grid_buildlist = TRUE)
   print(res)
 }
 
-#2016 with 2016 self/rest transfers, 3000x20 ('Right' if truth is >80%):
-#Right: BN, BE, BS, NA, EA, LV, ND,
-#SD, NwA, FST, Fy, WT, MU (13/18)
-#Can improve: 
-#  BW only 60%? May be OK as it was close between SF and DUP.
-#  EA 60%. Could get larger SDLP transfer from 2011. Was basically 3-way tie between UUP2,UKIP,SF.
-#  SA only 60%
-#  Str always have SDLP over UUP2 (will improve if treat Ind as more unionist;
-#    not present last year but figure out by counting uni/nat vote and compare to last year)
-#  UB close between SDLP, SF2 and UUP2. Should be split SDLP/SF2. (CISTA, Green, UKIP, UUP to SDLP a bit high; could see
-#    UUP to SDLP was small in 2011). 60% (30% SDLP) comb 0.5.
-#  EL 75% nw (SDLP, DUP3 sometimes missed), 100% comb 0.1.
-#With nw rest,self gaps filled: 
 
-#2016 with 2011 transfers, gaps filled:
-#  Without gaps BN,BE,BS,Antrims,LV,ND,SD are good, 
-#    BW DUP v SDLP, Str same problem as before, UB SDLP > UUP, 
+#-------- 16w16 - allow UB, BW ~60%, EA ~40%
+#Fixed 1grid Fy with Ind group change; fixed selfrest WT due to Ind uni/nat bug;
+#  selfrest UB fixed with local; selfrest Str, improved with local;
+#  1grid Str,FST, improved with local.
+res2016w16_1grid <- runAllConstitsEnsemble(constituencies,2016,fullTra2016All,NULL,
+                                           3000,20,use_1grid_buildlist = TRUE)
+#13/18, 0.116: miss EA, SA, ELD, FST (too much SF self-t?)
+res2016w16_1grid_comb0.5 <- runAllConstitsEnsemble(constituencies,2016,fullTra2016All,NULL,
+                                           3000,20,use_1grid_buildlist = TRUE,
+                                           alpha=0.5, localTransfersAll = localTransfersAll2016)
+#14/18, 0.058: miss EA, SA, FST
+res2016w16_1grid_comb0.1 <- runAllConstitsEnsemble(constituencies,2016,fullTra2016All,NULL,
+                                           3000,20,use_1grid_buildlist = TRUE,
+                                           alpha=0.1, localTransfersAll = localTransfersAll2016)
+#15/18, 0.066: miss EA, SA
+res2016w16_allall <- runAllConstitsEnsemble(constituencies,2016,fullTra2016All,fullTra2016All,
+                                            3000,20,use_1grid_buildlist = FALSE)
+#12/18, 0.074: miss BS (65), SA (70), Str (60), UB (15)
+res2016w16_selfrest <- runAllConstitsEnsemble(constituencies,2016,fullTra2016Self,fullTra2016Rest,
+                                           3000,20,use_1grid_buildlist = FALSE)
+#15/18, 0.061: miss UB (10), Str (70)
+res2016w16_selfrest_comb0.5 <- runAllConstitsEnsemble(constituencies,2016,fullTra2016Self,fullTra2016Rest,
+                                                      3000,20,use_1grid_buildlist = FALSE,
+                                                      alpha=0.5, localTransfersAll = localTransfersAll2016)
+#16/18, 0.039 (EA 35, UB 55)
+res2016w16_selfrest_comb0.1 <- runAllConstitsEnsemble(constituencies,2016,fullTra2016Self,fullTra2016Rest,
+                                                      3000,20,use_1grid_buildlist = FALSE,
+                                                      alpha=0.1, localTransfersAll = localTransfersAll2016)
+#15/18, 0.036 (EA 35, SA 70, Str 75)
 
-#2016 with 2011 transfers, gaps filled, comb 0.5:
+#--------16w11
+res2016w11_1grid <- runAllConstitsEnsemble(constituencies,2016,fullTra2011All,NULL,
+                                              3000,20,use_1grid_buildlist = TRUE)
+#8/18, 0.254: miss EA, SA, UB, ELD, FST, Fy
+res2016w11_selfrest <- runAllConstitsEnsemble(constituencies,2016,fullTra2011Self,fullTra2011Rest,
+                                              3000,20,use_1grid_buildlist = FALSE)
+#11/18: 0.208:  miss Str, LV, UB, WT
+#12/18, 0.184: miss Str, LV, UB, WT, BW 70%, EA 70%, 
+res2016w11_allall <- runAllConstitsEnsemble(constituencies,2016,fullTra2011All,fullTra2011All,
+                                              3000,20,use_1grid_buildlist = FALSE)
+#10/18, 0.246: miss BS, EA, Str, LV, UB, WT
+
+#--------11w11
+res2011w11_1grid <- runAllConstitsEnsemble(constituencies,2011,fullTra2011All,NULL,
+                                           3000,20,use_1grid_buildlist = TRUE)
+#13/18, 0.113: miss BN (35), UB (35), ELD (5)
+res2011w11_1grid_comb0.5 <- runAllConstitsEnsemble(constituencies,2011,fullTra2011All,NULL,
+                                                   3000,20,use_1grid_buildlist = TRUE,
+                                                   alpha=0.5, localTransfersAll = localTransfersAll2011)
+#13/18, 0.042: miss EA (75), NwA (75), ELD (40), FST (75)
+res2011w11_1grid_comb0.1 <- runAllConstitsEnsemble(constituencies,2011,fullTra2011All,NULL,
+                                                   3000,20,use_1grid_buildlist = TRUE,
+                                                   alpha=0.1, localTransfersAll = localTransfersAll2011)
+#15/18, 0.033: miss UB (50), ND (70), ELD (65)
+res2011w11_selfrest <- runAllConstitsEnsemble(constituencies,2011,fullTra2011Self,fullTra2011Rest,
+                                              3000,20,use_1grid_buildlist = FALSE)
+#9/18, 0.219: miss BN (55), NA (30), Str (55), UB (15), ELD (25), FST (15)
+
+res2011w11_selfrest_comb0.5 <- runAllConstitsEnsemble(constituencies,2011,fullTra2011Self,fullTra2011Rest,
+                                                   3000,20,use_1grid_buildlist = FALSE,
+                                                   alpha=0.5, localTransfersAll = localTransfersAll2011)
+#12/18, 0.156: miss Str (70), UB (50), NwA (25), ELD (65), FST (15)
+res2011w11_selfrest_comb0.1 <- runAllConstitsEnsemble(constituencies,2011,fullTra2011Self,fullTra2011Rest,
+                                                      3000,20,use_1grid_buildlist = FALSE,
+                                                      alpha=0.1, localTransfersAll = localTransfersAll2011)
+#12/18, 0.146: Str (75), UB (40), NwA (50), ELD (60), FST (15)
+res2011w11_selfrest_comb0.1sr <- runAllConstitsEnsemble(constituencies,2011,fullTra2011Self,fullTra2011Rest,
+                                                      3000,20,use_1grid_buildlist = FALSE,
+                                                      alpha=0.1, 
+                                                      localTransfersSelf = localTransfersSelf2011,
+                                                      localTransfersRest = localTransfersRest2011)
 
 
+#--------11w07
 
-#Can use this to find best nSample by Brier
-runAllConstitsEnsemble <- function(year, transfersAll, transfersSelf, transfersRest, 
-                                   nSample, nEnsemble, alpha=1) {
-  constituencies <- c('Belfast North','Belfast West','Belfast East','Belfast South',
-                      'North Antrim','East Antrim','South Antrim','Strangford',
-                      'Lagan Valley','Upper Bann','North Down','South Down',
-                      'Newry Armagh','East Londonderry','Fermanagh South Tyrone',
-                      'Foyle','West Tyrone','Mid Ulster')
-  brier <- 0
-  num_right <- 0
-  for (constit in constituencies[1:4]) {
-    res <- runConstitEnsemble(constit,year,transfersAll,
-                              transfersSelf,transfersRest,nSample,nEnsemble)
-    brier_add <- get_brier_for_constit(res,constit,year)
-    cat(constit,brier_add,'\n')
-    brier <- brier + brier_add
-    if (brier_add <= 0.04) num_right <- num_right + 1
+
+#--------
+
+tune_nSample <- function(constituencies, year, transfersSelf, transfersRest, 
+                       nSamples, nEnsembles,
+                       use_1grid_buildlist = FALSE) {
+  all_res <- data.frame()
+  for (i in seq(length(nSamples))) {
+    res <- runAllConstitsEnsemble(constituencies, year, transfersSelf, transfersRest,
+                           nSamples[i], nEnsembles[i],
+                           use_1grid_buildlist = use_1grid_buildlist)
+    all_res <- rbind(all_res, data.frame(nSample=nSamples[i],nEnsemble=nEnsembles[i],res))
   }
-  list(brier=brier, num_right=num_right)
+  all_res
 }
-
-
+tuneNs_16v16_1grid <- tune_nSample(constituencies,2016,fullTra2016All,fullTra2016Rest,
+                                   c(500,1500,3000,5000,8000),
+                                   c(50,  50,  20,  20,  20),
+                                   use_1grid_buildlist = TRUE)
