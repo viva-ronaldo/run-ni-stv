@@ -29,28 +29,38 @@
 #'   ballot(0, 3, 1, 2, 0, map = map)
 #' )
 #' stv(votes, 2)
-stv_fix <- function(votes, nseats, verbose=FALSE, getMatrix=FALSE) {
+stv_fix <- function(votes, nseats, verbose=FALSE, getMatrix=FALSE, getTable=FALSE) {
   winners <- c()
   out <- c()
   nvotes <- length(votes)
   weights <- rep(1, nvotes)
   quota <- droop_quota(nvotes, nseats)
-  if (verbose) cat('Quota is ',quota,'\n')
+  if (verbose) message('Quota is ',quota)
   running <- get_all_entries(votes)
   if (getMatrix) {
     transfer_matrix <- data.frame()
   } else {
     transfer_matrix <- NULL
   }
+  if (getTable) {
+      count_table <- data.frame(Candidate=running)
+  } else {
+      count_table <- NULL
+  }
 
   round <- 1
   while (length(winners) < nseats) {
-    if (verbose) cat(sprintf('Round %i\n',round))
+    if (verbose) message(sprintf('Round %i\n',round))
     round <- round + 1
     fps <- get_first_preferences(votes)
     through_this_rnd <- get_above_quota(fps, quota, weights)
     stillin <- setdiff(running, union(winners, out))
-    if (verbose) print_current_table(stillin, fps, weights)
+    if (verbose) print(get_current_table(stillin, fps, weights))
+    if (getTable) {
+        count_table <- merge(count_table, get_current_table(stillin, fps, weights), 
+                             by='Candidate', all.x=T)
+        names(count_table)[ncol(count_table)] <- paste0('Round_',round-1)
+    }
     
     if (length(fps) == 0) {
       break
@@ -79,7 +89,7 @@ stv_fix <- function(votes, nseats, verbose=FALSE, getMatrix=FALSE) {
         }
         
       # Move everyone's votes up and discount weights for each winner
-      if (verbose) votesForTransfer <- 0
+      votesForTransfer <- 0
       for (winner in through_this_rnd) {
         nvotes <- get_nvotes(fps, winner, weights)
         excess <- round(nvotes - quota, 3) #avoid precision errors
@@ -125,13 +135,19 @@ stv_fix <- function(votes, nseats, verbose=FALSE, getMatrix=FALSE) {
                                                                  votesForTransfer,
                                                                  verbose,transfer_matrix)
   }
-
+  if (getTable) count_table <- finalise_count_table(count_table, winners)
+  
   structure(
     list(winners = winners,
-         transfer_matrix = transfer_matrix),
+         transfer_matrix = transfer_matrix,
+         count_table = count_table),
     class = "STV"
   )
 }
+#formattable(stv_fix(read_votes_from_csv('~/Documents/sample_vote.csv'),2)$count_table, 
+#            list(R1=normalize_bar('pink'),
+#                 elected=formatter("span",style = x ~ style(color = ifelse(x,"green","red")),
+#                                   x ~ icontext(ifelse(x,"ok","remove")))))
 
 #' Return the names of the candidates who are over the current quota
 get_above_quota <- function(fps, quota, weights) {
@@ -178,13 +194,13 @@ get_stv_loser <- function(fps,stillin,weights) {
 }
 
 #' For verbose output, print the current votes table
-print_current_table <- function(stillin, fps, weights) {
+get_current_table <- function(stillin, fps, weights) {
     fpframe <- data.frame()
     for (p in stillin) {
-        fpframe <- rbind(fpframe,
-                         data.frame(cand=p, votes=get_nvotes(fps,p,weights)))
+        fpframe <- rbind(fpframe, data.frame(Candidate=p, 
+                                             votes=round(get_nvotes(fps,p,weights),2)))
     }
-    print(fpframe[order(fpframe$votes, decreasing=TRUE), ])
+    fpframe[order(fpframe$votes, decreasing=TRUE), ]
 }
 
 #' Add an entry to the transferMatrix, for cand_out
@@ -207,6 +223,18 @@ add_row_to_transfer_matrix <- function(votes,weights,running,stillin,cand_out,
     transfer_matrix
 }
     
+finalise_count_table <- function(count_table, winners) {
+    count_table[,2:ncol(count_table)] <- apply(count_table[,2:ncol(count_table)],2,
+        function(c) ifelse(is.na(c), ifelse(count_table$Candidate %in% winners, 'E', ' '), c))
+    count_table <- cbind(count_table, data.frame(Elected=count_table$Candidate %in% winners))
+    count_table <- count_table[order(count_table$Round_1,decreasing = TRUE), ]
+    arrange_cols <- colnames(count_table)[which(!(colnames(count_table) %in% c('Candidate','Elected')))]
+    count_table <- arrange_(count_table, .dots=arrange_cols)
+    count_table <- count_table[rev(row.names(count_table)),]
+    row.names(count_table) <- NULL
+    return(count_table)
+}
+
 drop_empty_votes_and_update_weights <- function(votes, weights) {
     keepInds <- vector('logical',length=length(votes))
     for (v in seq_along(votes)) {

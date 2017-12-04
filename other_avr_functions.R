@@ -38,8 +38,8 @@ remove_prefs <- function(votes, exclusions) {
 #Read in a csv file of options and ballots in standard format, no header
 read_votes_from_csv <- function(fileName) {
     votes <- read.csv(fileName, header=FALSE, stringsAsFactors=FALSE)
-    cat(sprintf('%g candidates on ballot\n',nrow(votes)))
-    cat(sprintf('%g votes received\n',ncol(votes)-1))
+    message(sprintf('%g candidates on ballot\n',nrow(votes)))
+    message(sprintf('%g votes received\n',ncol(votes)-1))
     names(votes) <- c('Candidates', paste0('ballot',seq(ncol(votes)-1)))
     return(lapply(votes[2:ncol(votes)], function(b) ballot(b, map=votes$Candidates)))
 }
